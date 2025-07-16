@@ -1,0 +1,23 @@
+{
+  "Development": {
+    "url": "goprodle.com",
+    "remote_path": "/home/prsdev/newgoprodle",
+    "remote_host_ip": "140.1.1.119",
+    "remote_host": "goprodle",
+    "credentials_id": "goprodle"
+  },
+  "Prodlelabs": {
+    "url": "prodlelabs.com",
+    "remote_path": "/home/admin/newprodle",
+    "remote_host_ip": "139.84.131.195",
+    "remote_host": "prodleteam-app01",
+    "credentials_id": "prodlelabs"
+  },
+  "Prodlecloud": {
+    "url": "prodlecloud.com",
+    "remote_path": "/home/pcloud/prodle",
+    "remote_host_ip": "129.159.22.207",
+    "remote_host": "demoserver",
+    "credentials_id": "prodlecloud"
+  }
+}

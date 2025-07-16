@@ -1,0 +1,163 @@
+def url
+def remote_host_ip
+def remote_path
+def remote_host
+def credentials_id
+//def isUserAdmin(userCause) {
+//  def admins = ['shashank', 'admin2', 'admin3'] // List of administrators' usernames
+    
+//    if (userCause != null && admins.contains(userCause.userId)) {
+ //       return true
+ //   } else {
+//        return false
+//    }
+//}
+
+pipeline { 
+    agent any
+
+    parameters {
+        choice(name: 'env', choices: ['Development', 'Prodlelabs', 'Prodlecloud'], description: 'Select the environment to deploy')
+    }
+
+ stages {
+  //      stage('Checking Users Role for Deployment') {
+  //          steps {
+  //              script {
+                    // Check if the user is an administrator
+  //                  def userIsAdmin = isUserAdmin(currentBuild.rawBuild.getCause(hudson.model.Cause$UserIdCause))
+  //                  if (!userIsAdmin && params.env != 'Development') {
+  //                      error "Non-administrators can only deploy to Development environment. Deployment failed."
+  //                  }
+  //              }
+  //          }
+  //      }
+
+//stages {
+//      stage('Sonarqube analysis') {
+//       environment {
+//         scannerHome = tool 'sonarscanner'
+//    }
+//    steps {
+//     nodejs(nodeJSInstallationName: 'nodejs') {
+//        withSonarQubeEnv('sonarqube') {
+//           sh "${scannerHome}/bin/sonar-scanner \
+//              -Dsonar.projectKey=frontend \
+//              -Dsonar.sources=./ \
+//              -Dsonar.language=js \
+//              -Dsonar.sourceEncoding=UTF-8"
+//            }
+//       }
+//  }
+//}
+ 
+        stage('Checking for environment') {
+         steps {
+          script {
+          def envConfig = readJSON file: "${WORKSPACE}/env-config.json"
+          def envi = params.env
+          url = envConfig[envi]['url']
+          remote_path = envConfig[envi]['remote_path']
+          remote_host_ip = envConfig[envi]['remote_host_ip']
+          remote_host = envConfig[envi]['remote_host']
+          credentials_id = envConfig[envi]['credentials_id'] 
+          def user
+          def password
+          withCredentials([usernamePassword(credentialsId: "${credentials_id}", usernameVariable: 'remote_user', passwordVariable: 'remote_password')]) {
+            user = "${remote_user}"
+            password = "${remote_password}"
+            echo "Passing the username and password" 
+          }
+            env.user = "${user}"
+            env.password = "${password}"
+        }
+        script {
+                    if(params.env == 'Development') {
+                        def fileContent = readFile("${WORKSPACE}/.env.development")
+                        fileContent = fileContent.replace('localhost', "${url}")
+                        fileContent = fileContent.replace('true', "false"); // replaces if object store and Aceoffix is set to true to false for Development i.e goprodle
+                        writeFile file: "${WORKSPACE}/.env.development", text: fileContent
+                        }
+                      else{
+                        def fileContent = readFile("${WORKSPACE}/.env.production")
+                        fileContent = fileContent.replace('goprodle.com', "${url}")
+                        fileContent = fileContent.replace('prodlelabs.com', "${url}")
+                        fileContent = fileContent.replace('prodlecloud.com', "${url}")
+                        writeFile file: "${WORKSPACE}/.env.production", text: fileContent
+                    }
+                }
+      }
+    }
+    
+          stage('Installing dependencies') {
+           steps {
+              nodejs(nodeJSInstallationName: 'nodejs') {
+                  script {
+                        if (params.env == 'Prodlelabs' || params.env == 'Prodlecloud') {
+                            sh 'npm install -f'
+                            sh 'npm run build'
+                            sh 'chmod -R 775 node_modules'
+                            sh 'chmod -R 775 build'
+                        }
+                        else {
+                        echo "Skipping to next stage"
+                    }
+                }
+            }
+         }
+      }
+    
+    
+    stage('Copying to specified path') {
+        steps {
+            script {
+                def remote = [:]
+                remote.name = "${remote_host}"
+                remote.host = "${remote_host_ip}"
+                remote.allowAnyHosts = true
+                remote.user = "${env.user}"
+                remote.password = "${env.password}"
+                sshCommand remote: remote, command: "pm2 delete frontend || true && rm -rf ${remote_path}/frontend || true"
+                sshCommand remote: remote, command: "mkdir -p ${remote_path} || true"
+                if(params.env == 'Development'){
+                    sshPut remote: remote, from: "${WORKSPACE}", into: "${remote_path}"
+                    sshCommand remote: remote, command: " cd ${remote_path}/frontend && npm i && pm2 start --name frontend npm -- start"
+                    }
+                 else{
+                  sshCommand remote: remote, command: "mkdir -p ${remote_path}/frontend"
+                  sshPut remote: remote, from: "${WORKSPACE}/build", into: "${remote_path}/frontend"
+                  sshPut remote: remote, from: "${WORKSPACE}/node_modules", into: "${remote_path}/frontend"
+                  sshCommand remote: remote, command: "cd ${remote_path}/frontend && pm2 serve build 3000 --spa --name frontend"
+                     }
+                }
+            }
+        }
+    }
+    post {
+        always {
+          emailext (
+            attachLog: true,
+            subject: "Jenkins Pipeline Status for JOB: ${JOB_NAME}",
+                      body: '''<html>
+                                  <body>
+                                  <p>Dear User,</p>
+                                  <p>The Jenkins build for Job <strong>${JOB_NAME}</strong> has been completed:</p>
+                                  <ul>
+                                    <li><strong>Build Status:</strong> ${BUILD_STATUS}</li>
+                                    <li><strong>Build Status:</strong> ${BUILD_NUMBER}</li>
+                                    <li><strong>Triggered by:</strong> ${BUILD_USER}</li>
+                                    <li><a href="${BUILD_URL}/changes">Click Here</a> to view the Changes/Commits in this Build</li>
+                                 </ul>
+                                    <p> You can view the <strong>build.log</strong> file in the attachment for more information </p>
+                                    <p> Thank You! </p>
+                                  </body>
+                              </html>''',
+                      mimeType: 'text/html', 
+                      to: 'shashank@processridge.in',
+                      recipientProviders: [buildUser()],                   
+                      from: 'jenkins@prodlecloud.com'
+                    )
+          cleanWs()
+      }
+    }
+}

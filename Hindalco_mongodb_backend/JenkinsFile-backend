@@ -1,0 +1,196 @@
+def url 
+def remote_host_ip
+def remote_path
+def remote_host
+def credentials_id
+
+pipeline { 
+  agent any
+
+  parameters {
+    choice(name: 'env', choices: ['Development', 'Prodlelabs', 'Prodlecloud'], description: 'Select the environment to deploy')
+  //  choice(name: 'DB Push Required', choice: ['No','Yes'],description: "Is there any Schema changes")
+  }
+
+stages {
+//      stage('Sonarqube analysis') {
+//       environment {
+//         scannerHome = tool 'sonarscanner'
+//    }
+//    steps {
+//     nodejs(nodeJSInstallationName: 'nodejs') {
+//        withSonarQubeEnv('sonarqube') {
+//           sh "${scannerHome}/bin/sonar-scanner \
+//              -Dsonar.projectKey=backend \
+//              -Dsonar.sources=./ \
+//              -Dsonar.language=js \
+//              -Dsonar.sourceEncoding=UTF-8"
+//            }
+//       }
+//  }
+//}
+ 
+        stage('Checking for environment') {
+         steps {
+          script {
+          def envConfig = readJSON file: "${WORKSPACE}/env-config.json"
+          def envi = params.env
+          url = envConfig[envi]['url']
+          remote_path = envConfig[envi]['remote_path']
+          remote_host_ip = envConfig[envi]['remote_host_ip']
+          remote_host = envConfig[envi]['remote_host']
+          credentials_id = envConfig[envi]['credentials_id'] 
+          def url2 = url.getClass().getName()
+          println(url2)
+          def user
+          def password
+          withCredentials([usernamePassword(credentialsId: "${credentials_id}", usernameVariable: 'remote_user', passwordVariable: 'remote_password')]) {
+            user = "${remote_user}"
+            password = "${remote_password}"
+            echo "Passing the username and password" 
+          }
+            env.user = "${user}"
+            env.password = "${password}"
+        }
+        script {
+          if (params.env == 'Development') {
+            def protocol = 'http'
+            def file = '.env'
+            def content = readFile(file)
+            content = content.replaceAll(/KEYCLOAK_API=.*/, "KEYCLOAK_API=http://${url}:8080")
+            content = content.replaceAll(/REDIRECT=.*/, "REDIRECT=${url}:3000")
+            content = content.replaceAll(/SERVER_IP=.*/, "SERVER_IP=\"http://${url}:5000\"")
+            content = content.replaceAll(/PROTOCOL=.*/, "PROTOCOL=${protocol}")
+            content = content.replace('true', "false"); // replaces if object store if it's set to true to false for Development i.e goprodle
+            def lines = content.readLines()
+            // Find and replace the MONGO_DB_URI line
+            lines.eachWithIndex { line, index ->
+                if (line.startsWith('MONGO_DB_URI=')) {
+                    lines[index] = "MONGO_DB_URI=\"${goprodle_mongo}\""
+                }
+                if (line.startsWith('MONGO_DB_URI1=')) {
+                    lines[index] = "MONGO_DB_URI1=\"${goprodle_mongo}\""
+                }
+               if (line.startsWith('MYSQL=')) {
+                    lines[index] = "MYSQL=\"${goprodle_mysql}\""
+                }
+            }
+            // Join the lines back into a single string
+            content = lines.join('\n')
+            writeFile file: file, text: content
+          } else {
+            def protocol = 'https'
+            def file = '.env'
+            def content = readFile(file)
+            content = content.replaceAll(/KEYCLOAK_API=.*/, "KEYCLOAK_API=https://${url}")
+            content = content.replaceAll(/REDIRECT=.*/, "REDIRECT=${url}")
+            content = content.replaceAll(/SERVER_IP=.*/, "SERVER_IP=\"https://${url}\"")
+            content = content.replaceAll(/PROTOCOL=.*/, "PROTOCOL=${protocol}")
+            writeFile file: file, text: content
+          }
+        }
+      }
+    }
+    
+          stage('Installing dependencies') {
+           steps {
+              nodejs(nodeJSInstallationName: 'nodejs') {
+                  script {
+                      if (params.env == 'Prodlelabs' || params.env == 'Prodlecloud') {
+                            // Install npm dependencies
+                            sh 'npm install'
+                        
+                            // Remove existing generated Prisma files
+                            sh 'rm -rf ${WORKSPACE}/prisma/generated || true'
+                        
+                            // Generate Prisma client for schema.prisma
+                            sh 'npx prisma generate --schema prisma/schema.prisma'
+                        
+                            // Generate Prisma client for schema2.prisma
+                            sh 'npx prisma generate --schema prisma/schema2.prisma'
+                        
+                            // Build the project
+                            sh 'npm run build'
+                        
+                            // Copy generated Prisma files to the appropriate directory
+                            sh 'cp -rf ${WORKSPACE}/prisma/generated ${WORKSPACE}/dist/prisma/'
+                        
+                            // Set appropriate permissions
+                            sh 'chmod -R 775 node_modules'
+                            sh 'chmod -R 775 dist'
+                        }
+
+                        else {
+                        echo "Skipping to next stage"
+                    }
+                }
+            }
+         }
+      }
+    
+    
+    stage('Copying to specified path') {
+        steps {
+            script {
+                def remote = [:]
+                remote.name = "${remote_host}"
+                remote.host = "${remote_host_ip}"
+                remote.allowAnyHosts = true
+                remote.user = "${env.user}"
+                remote.password = "${env.password}"
+                sshCommand remote: remote, command: "pm2 delete backend || true && rm -rf ${remote_path}/backend || ture"
+                sshCommand remote: remote, command: "mkdir -p ${remote_path} || true"
+                if(params.env == 'Development'){
+                    sshPut remote: remote, from: "${WORKSPACE}", into: "${remote_path}"
+                    sshCommand remote: remote, command: " cd ${remote_path}/backend && npm i"
+                    sshCommand remote: remote, command: "rm -rf ${remote_path}/backend/prisma/generated || true"
+                    sshCommand remote: remote, command: "cd ${remote_path}/backend && npx prisma generate --schema prisma/schema.prisma && npx prisma generate --schema prisma/schema2.prisma"
+                    sshCommand remote: remote, command: " cd ${remote_path}/backend && npm run build"
+                    sshCommand remote: remote, command: "cd ${remote_path}/backend && cp -r prisma/generated ${remote_path}/backend/dist/prisma"
+                    sshCommand remote: remote, command: "cd ${remote_path}/backend && pm2 start --name backend npm -- start"
+                    }
+                 else{
+                  sshCommand remote: remote, command: "mkdir -p ${remote_path}/backend"
+                  sshPut remote: remote, from: "${WORKSPACE}/dist", into: "${remote_path}/backend"
+                  sshPut remote: remote, from: "${WORKSPACE}/node_modules", into: "${remote_path}/backend"
+                  sshPut remote: remote, from: "${WORKSPACE}/.env", into: "${remote_path}/backend"
+                  sshPut remote: remote, from: "${WORKSPACE}/prisma", into: "${remote_path}/backend/"
+                  sshCommand remote: remote, command: "chmod 775 ${remote_path}/backend/prisma"
+
+               // sshPut remote: remote, from: "${WORKSPACE}", into: "${remote_path}"
+               // sshCommand remote: remote, command: "cd ${remote_path}/backend && npm i && npm run build"
+                  sshCommand remote: remote, command: "cd ${remote_path}/backend/dist/src && pm2 start main.js --name backend"
+                     }
+                }
+            }
+        }
+    }
+     post {
+        always {
+          emailext (
+            attachLog: true,
+            subject: "Jenkins Pipeline Status for JOB: ${JOB_NAME}",
+                      body: '''<html>
+                                  <body>
+                                  <p>Dear User,</p>
+                                  <p>The Jenkins build for Job <strong>${JOB_NAME}</strong> has been completed:</p>
+                                  <ul>
+                                    <li><strong>Build Status:</strong> ${BUILD_STATUS}</li>
+                                    <li><strong>Build Status:</strong> ${BUILD_NUMBER}</li>
+                                    <li><strong>Triggered by:</strong> ${BUILD_USER}</li>
+                                    <li><a href="${BUILD_URL}/changes">Click Here</a> to view the Changes/Commits in this Build</li>
+                                 </ul>
+                                    <p> You can view the <strong>build.log</strong> file in the attachment for more information </p>
+                                    <p> Thank You! </p>
+                                  </body>
+                              </html>''',
+                      mimeType: 'text/html', 
+                      to: 'shashank@processridge.in',
+                      recipientProviders: [buildUser()],                   
+                      from: 'jenkins@prodlecloud.com'
+                
+                    )
+          cleanWs()
+      }
+    }
+  }

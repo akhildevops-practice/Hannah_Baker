@@ -1,0 +1,166 @@
+import React, { useEffect, useRef } from "react";
+import { Chart as ChartJS } from "chart.js";
+import { Tag } from "antd";
+import { useMediaQuery } from "@material-ui/core";
+
+type props = {
+  productTypeChartData?: any;
+  showModalCharts?: any;
+  setSelectedCapaIds?: any;
+};
+
+const CapaByProductChart = ({
+  productTypeChartData,
+  showModalCharts,
+  setSelectedCapaIds,
+}: props) => {
+  const smallScreen = useMediaQuery("(min-width:450px)");
+  const BackgroundColor = [
+    "#21618C",
+    "#DC5F00",
+    "#686D76",
+    "#C73659",
+    "#373A40",
+    "#f0cb28",
+    "#699eb0",
+    "#b4a97e",
+    "#CCC5A8",
+    "#DBDB46",
+    "#6b85fa",
+  ];
+
+  const chartRef2 = useRef<any>(null);
+  const chartInstance = useRef<any>(null);
+
+  useEffect(() => {
+    const ctx = chartRef2?.current?.getContext("2d");
+
+    // Destroy previous chart instance if it exists
+    if (chartInstance.current) {
+      chartInstance.current.destroy();
+    }
+
+    const labels: any = productTypeChartData?.map(
+      (value: any) => value?.productName
+    );
+    const datas: any = productTypeChartData?.map((value: any) => value?.count);
+
+    chartInstance.current = new ChartJS(ctx, {
+      type: "bar",
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            label: "",
+            data: datas,
+            backgroundColor: BackgroundColor,
+            borderWidth: 1,
+            maxBarThickness: 60,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          datalabels: {
+            color: "white", // Change the color of data labels
+            font: {
+              size: 14, // Increase the size of data labels
+            },
+          },
+          legend: {
+            display: false,
+            position: "right",
+          },
+          title: {
+            display: true,
+            align: "start",
+            text: `By Product Type`,
+            font: {
+              size: 14,
+              weight: "600",
+              family: "'Poppins', sans-serif", // Change the font family here
+            },
+            color: "Black",
+            padding: {
+              top: 10,
+              bottom: 30,
+            },
+          },
+          tooltip: {
+            enabled: true,
+            backgroundColor: "rgba(0, 0, 0, 0.7)",
+            borderColor: "#fff",
+            borderWidth: 1,
+            titleFont: {
+              size: 16, // Increase font size
+              weight: "bold",
+            },
+            bodyFont: {
+              size: 14, // Increase font size
+              weight: "normal",
+            },
+            padding: 10, // Add more padding
+          },
+        },
+        scales: {
+          y: {
+            grid: {
+              drawOnChartArea: false, // removes horizontal grid lines
+              drawBorder: true, // keeps the Y-axis line
+              drawTicks: true, // optional: keeps Y-axis ticks
+            },
+            ticks: {
+              stepSize: 5, // Adjust step size to control tick interval
+              maxTicksLimit: 6,
+              callback: function (value) {
+                // Round the value to remove decimals and return the integer value
+                return Number(value).toFixed(0); // Removes decimals by rounding the number
+              },
+            },
+          },
+          x: {
+            grid: {
+              drawOnChartArea: false, // removes vertical grid lines
+              drawBorder: true, // keeps the X-axis line
+              drawTicks: true, // optional: keeps X-axis ticks
+            },
+            ticks: {
+              autoSkip: false,
+              maxRotation: 0,
+              minRotation: 0,
+              font: {
+                size: 10,
+                family: "'Poppins', sans-serif",
+              },
+            },
+          },
+        },
+        onClick: (e, elements) => {
+          if (elements.length > 0) {
+            const index = elements[0].index;
+            const selectedIds = productTypeChartData[index]?.ids || [];
+            setSelectedCapaIds(selectedIds);
+            showModalCharts(); // optional: show modal when bar is clicked
+          }
+        },
+      },
+    });
+
+    // Cleanup function to destroy chart instance
+    return () => {
+      if (chartInstance.current) {
+        chartInstance.current.destroy();
+      }
+    };
+  }, [productTypeChartData]);
+
+  return (
+    <div style={{ width: "100%", height: "100%" }}>
+      <canvas ref={chartRef2} style={{ width: "100%", height: "100%" }} />
+    </div>
+  );
+};
+
+export default CapaByProductChart;

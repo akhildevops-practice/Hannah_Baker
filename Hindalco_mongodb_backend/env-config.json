@@ -1,0 +1,26 @@
+{
+  "Development": {
+    "url": "goprodle.com",
+    "remote_path": "/home/prsdev/newgoprodle",
+    "remote_host_ip": "140.1.1.119",
+    "remote_host": "goprodle",
+    "credentials_id": "goprodle",
+    "mongodb_credId": "mongo_goprodle"
+  },
+  "Prodlelabs": {
+    "url": "prodlelabs.com",
+    "remote_path": "/home/admin/newprodle",
+    "remote_host_ip": "139.84.131.195",
+    "remote_host": "prodleteam-app01",
+    "credentials_id": "prodlelabs",
+    "mongodb_credId": "mongo_prodlelabs"
+  },
+  "Prodlecloud": {
+    "url": "prodlecloud.com",
+    "remote_path": "/home/admin/newProdle",
+    "remote_host_ip": "139.84.140.69",
+    "remote_host": "prodlecloud",
+    "credentials_id": "prodlecloud",
+    "mongodb_credId": "mongo_prodlecloud"
+  }
+}
